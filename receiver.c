@@ -1,7 +1,12 @@
 /**
- * UDP server that handles simple storage-lookup requests
+ * UDP receiver (server) that takes in messages and
+ * replies with an ack indicating the sequence number
+ * of the most recently received message.
  * 
- * CMPT 434 - A1
+ * Contains a control interface to manually choose to
+ * "corrupt" a received message.
+ * 
+ * CMPT 434 - A2
  * Steven Rau
  * scr108
  * 11115094
@@ -18,17 +23,15 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#include "storage.h"
-#include "server.h"
+#include "shared.h"
+
 
 /*-----------------------------------------------------------------------------
  * File-scope constants & globals
  * --------------------------------------------------------------------------*/
 
-#define BUF_SIZE  1024
-
-/* The storage "dictionary" array held in storage.c */
-extern struct key_val_pair storage[MAX_STORAGE_SIZE];
+/* Keeps track of the last successful sequence number received */
+uint32_t last_succ_seq = UINT32_MAX;
 
 /*-----------------------------------------------------------------------------
  * Helper functions
@@ -63,10 +66,12 @@ int main(int argc, char *argv[])
     int rv;
     int num_bytes;
     struct sockaddr_storage their_addr;
-    char buf[BUF_SIZE];
-    char *reply_msg;
+    uint32_t reply_seq;  /* Sequence number received */
     socklen_t addr_len;
     char s[INET6_ADDRSTRLEN];
+    struct message *msg;
+    char *msgRecvd = NULL;  /* Buffer to read in the yes/no message corrupt input */
+    size_t len = 0;         /* Length of text line read in */
     
     if (argc < 2)
     {
@@ -127,15 +132,20 @@ int main(int argc, char *argv[])
     }
 
     freeaddrinfo(serv_info);
+    
+    /* Allocate space for the message to be received */
+    msg = calloc(1, sizeof(struct message));
 
     printf("UDP Server: waiting to recvfrom...\n");
     
     addr_len = sizeof their_addr;
     while (1)
     {
-        memset(buf, 0, BUF_SIZE);
+        /* Clear out the message space */
+        memset(msg, 0, sizeof(struct message));
         
-        if ((num_bytes = recvfrom(sock_fd, buf, BUF_SIZE-1 , 0,
+        /* Receive the message */
+        if ((num_bytes = recvfrom(sock_fd, msg, sizeof(struct message) , 0,
             (struct sockaddr *)&their_addr, &addr_len)) == -1)
         {
             perror("recvfrom");
@@ -147,24 +157,37 @@ int main(int argc, char *argv[])
                                                 get_in_addr((struct sockaddr *)&their_addr),
                                                 s, sizeof s));
         
-        /* Start with reply_msg being null */
-        reply_msg = NULL;
-        /* Send the command to be parsed and run */
-        parse_and_run_command(buf, num_bytes, &reply_msg);
+        /* Print the message info that was received */
+        printf("\nMsg recvd:\n"
+               "\tSeq #: %i   Text: %s", msg->seq, msg->text);
         
-        /* Send the reply back to the sender */
-        num_bytes = sendto(sock_fd, reply_msg, strlen(reply_msg), 0,
-                           (struct sockaddr *) &their_addr, addr_len);
-        if (num_bytes < 0) 
+        reply_seq = msg->seq;
+        
+        printf("Should the message be correctly received? (y/n) \n");
+        /* Get user inpt to decide whether the data received was "corrupt" (i.e., no ack) */
+        getline(&msgRecvd, &len, stdin);
+        
+        /* If the first letter Y or y (yes), send a reply, otherwise do nothing (corrupt msg) */
+        if (msgRecvd[0] == 'y' && msgRecvd[0] != 'Y')
         {
-            perror("sendto");
+            /* Update the mst request successful sequence number */
+            last_succ_seq = reply_seq;
+            
+            /* Send the sequence number successfully received as a reply back to the sender */
+            num_bytes = sendto(sock_fd, (char *)&reply_seq, sizeof(reply_seq), 0,
+                               (struct sockaddr *) &their_addr, addr_len);
+            if (num_bytes < 0) 
+            {
+                perror("sendto");
 
+            }
         }
-        
-        free(reply_msg);
     }
+    
+    /* Free the buffer holding the user's input */
+    free(msgRecvd);
 
-        close(sock_fd);
+    close(sock_fd);
     
     return 0;
 }

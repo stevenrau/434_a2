@@ -1,0 +1,18 @@
+//////////////////////// A2, PartA - Design Doc \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+Steven Rau
+scr108
+11115094
+
+---------
+| Q1 
+---------
+
+UDP sender (client)
+-----------------------------
+I began with my UDP proxy since it alread contained the UDP client side that I need for this assignment. Quite a bit of unneeded code was removed (code that interacted with the client), so I think this UDP sender/client is much simpler than my UDP proxy from assignment 1.
+
+
+UDP receiver (server)
+-----------------------------
+I used my UDP server from assignment 1 as a starting point. Very few things had to be removed and mostly all cahnges made were additions to support the extra functionality needed.

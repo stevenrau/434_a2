@@ -1,0 +1,11 @@
+//////////////////////// A1, PART A - README \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+Steven Rau
+scr108
+11115094
+
+-------------
+Known Issues
+-------------
+- The max message/input text length is set to 256 characters. Entering a message beyond that will cause it to be cut off at character 256.
+

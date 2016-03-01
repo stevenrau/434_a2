@@ -1,23 +1,18 @@
 CC=gcc
 CFLAGS=-Wall -pedantic
-TCP_SERVER_SOURCE=tcpServer.c server.h storage.c storage.h
-TCP_PROXY_SOURCE=tcpProxy.c server.h
-UDP_SERVER_SOURCE=udpServer.c server.h storage.c storage.h
-UDP_PROXY_SOURCE=udpProxy.c
+SENDER_SOURCE=sender.c sender.h
+RECEIVER_SOURCE=receiver.c
+SENDER_EXEC=sender
+RECEIVER_EXEC=receiver
+EXEC=$(SENDER_EXEC) $(RECEIVER_EXEC)
 
-all: tcpServer tcpProxy udpServer udpProxy
+all: sender receiver
 
-tcpServer: $(TCP_SERVER_SOURCE)
-	$(CC) $(CFLAGS) -o tcpServer $(TCP_SERVER_SOURCE)
+sender: $(SENDER_SOURCE)
+	$(CC) $(CFLAGS) -o $(SENDER_EXEC) $(SENDER_SOURCE)
 
-tcpProxy: $(TCP_PROXY_SOURCE)
-	$(CC) $(CFLAGS) -o tcpProxy $(TCP_PROXY_SOURCE)
-
-udpServer: $(UDP_SERVER_SOURCE)
-	$(CC) $(CFLAGS) -o udpServer $(UDP_SERVER_SOURCE)
-
-udpProxy: $(UDP_PROXY_SOURCE)
-	$(CC) $(CFLAGS) -o udpProxy $(UDP_PROXY_SOURCE)
+receiver: $(RECEIVER_SOURCE)
+	$(CC) $(CFLAGS) -o $(RECEIVER_EXEC) $(RECEIVER_SOURCE)
 
 clean:
-	rm -f *.o tcpServer tcpProxy udpServer udpProxy
+	rm -f *.o $(EXEC)

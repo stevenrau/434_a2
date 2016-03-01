@@ -1,9 +1,10 @@
 /**
- * UDP proxy that forwards client TCP requests to the
- * UDP server and then forwards the server response back to
- * the client
+ * UDP sender that takes in the receiver's IP address and Port number
+ * as command line arguments.
  * 
- * CMPT 434 - A1
+ * Sent data is input as text on the command line
+ * 
+ * CMPT 434 - A2
  * Steven Rau
  * scr108
  * 11115094
@@ -22,76 +23,62 @@
 #include <netdb.h>
 #include <netinet/in.h>
 
-#include "server.h"
+#include "sender.h"
+#include "shared.h"
 
 /*-----------------------------------------------------------------------------
  * File-scope constants & globals
  * --------------------------------------------------------------------------*/
 
-#define PROXY_BACKLOG   10  /* How many pending connections the socket queue will hold */
+#define SENDER_BACKLOG   10  /* How many pending connections the socket queue will hold (not really necessary*/
 #define BUF_SIZE  1024
+
 
 /*-----------------------------------------------------------------------------
  * Helper Functions
  * --------------------------------------------------------------------------*/
 
-bool transfer_tcp_to_udp(int client_fd, int server_fd, struct addrinfo *addr)
+/**
+ * Takes in a msg buffer and sends it to the reciever
+ * 
+ * @param[in] msg      Buffer containing the message to send
+ * @param[in] recv_fd  Receiver's file descriptor
+ * @param[in] addr     Receiver's adress info
+ * 
+ */
+bool transfer_msg_to_receiver(char msg[], int recv_fd, struct addrinfo *addr)
 {
-    char buf[BUF_SIZE];
-    int num_bytes;
+    int num_bytes_sent;
     bool success = true;
     
-    memset(buf, 0, BUF_SIZE);
-    
-    /* Read in the TCP sender's byte stream */
-    num_bytes = read(client_fd, buf, BUF_SIZE);
-    if (num_bytes < 0) 
-    {
-        fprintf(stderr, "ERROR reading from sender socket\n");
-        
-        success = false;
-    }
-    else
-    {
-        /* Then write it to the UDP receiver's fd */
-        if ((num_bytes = sendto(server_fd, buf, BUF_SIZE, 0,
-                                addr->ai_addr, addr->ai_addrlen)) == -1)
-        {
-            perror("talker: sendto");
-        
-            success = false;
-        }
-    }
-    
-    return success;
-}
-
-bool transfer_udp_to_tcp(int server_fd, int client_fd, struct addrinfo *server_addr)
-{
-    char buf[BUF_SIZE];
-    int num_bytes;
-    bool success = true;
-    
-    memset(buf, 0, BUF_SIZE);
-    
-    /* Read in the UDP server's reply */
-    if ((num_bytes = recvfrom(server_fd, buf, BUF_SIZE-1 , 0,
-         server_addr->ai_addr, &server_addr->ai_addrlen)) == -1)
+    num_bytes_sent = sendto(recv_fd, msg, sizeof(struct message), 0, addr->ai_addr, addr->ai_addrlen);
+    if (num_bytes_sent == -1)
     {
         perror("recvfrom");
             
         success = false;
     }
-    else
+    
+    return success;;
+}
+
+/**
+ * Gets an ack (reply) from the receiver
+ * 
+ * The ack should be the sequence number of most recent successfully recieved packet
+ */
+bool get_reply_from_receiver(uint32_t *reply_seq, int recv_fd, struct addrinfo *addr)
+{
+    int num_bytes;
+    bool success = true;
+    
+    /* Read in the UDP server's reply */
+    if ((num_bytes = recvfrom(recv_fd, (char *)reply_seq, sizeof(*reply_seq) , 0,
+         addr->ai_addr, &addr->ai_addrlen)) == -1)
     {
-        /* Then write it to the TCP receiver's file descriptor */
-        num_bytes = write(client_fd, buf, num_bytes);
-        if (num_bytes == -1)
-        {   
-            fprintf(stderr, "ERROR writing to receiver socket\n");
+        perror("recvfrom");
             
-            success = false;
-        }
+        success = false;
     }
     
     return success;
@@ -99,26 +86,28 @@ bool transfer_udp_to_tcp(int server_fd, int client_fd, struct addrinfo *server_a
     
 
 /**
- * Handles a TCP request from a client and forwards data to UDP server. Then takes a
- * UDP reply message and forwards it back to the client via TCP
+ * Forwards message data to UDP receiver/server. Then takes in
+ * and handles a UDP reply (ack)
  * 
- * @param[in] client  File descriptor of client stream (TCP)
- * @param[in] remote_host  Host name of server (UDP)
- * @param[in] remote_port  Server's port number (UDP)
+ * @param[in] msg  Message to forward to the reciever
+ * @param[in] receiver_ip  Host name of server (UDP)
+ * @param[in] receiver_port  Server's port number (UDP)
  */
-void handle(int client, char *remote_host, char *remote_port)
+void handle(char msg[], char *receiver_ip, char *receiver_port)
 {
-    int sock_fd;
+    int receiver_sock;
     struct addrinfo hints;
     struct addrinfo *serv_info;
     struct addrinfo *p;
     int rv;
+    uint32_t *reply_seq;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
 
-    if ((rv = getaddrinfo(remote_host, remote_port, &hints, &serv_info)) != 0)
+    /* Get the receiver's address information */
+    if ((rv = getaddrinfo(receiver_ip, receiver_port, &hints, &serv_info)) != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         
@@ -128,7 +117,7 @@ void handle(int client, char *remote_host, char *remote_port)
     /* Loop through the results and make the first available socket */
     for(p = serv_info; p != NULL; p = p->ai_next)
     {
-        if ((sock_fd = socket(p->ai_family, p->ai_socktype,
+        if ((receiver_sock = socket(p->ai_family, p->ai_socktype,
                               p->ai_protocol)) == -1)
         {
             perror("talker: socket");
@@ -146,16 +135,22 @@ void handle(int client, char *remote_host, char *remote_port)
         exit(1);
     }
     
-    /* Transfer the TCP client message to the UDP server */
-    transfer_tcp_to_udp(client, sock_fd, p);
+    /* Transfer the message to the receiver via UDP */
+    transfer_msg_to_receiver(msg, receiver_sock, p);
     
-    /* Transfer the UDP server reply to the TCP client */
-    transfer_udp_to_tcp(sock_fd, client, p);
-
+    /* Make space for the reply sequence number */
+    reply_seq = calloc(1, sizeof(*reply_seq));
+    
+    /* Get the ack (reply) from the receiver */
+    get_reply_from_receiver(reply_seq, receiver_sock, p);
+    
+    printf("Ack received: %i\n\n", *reply_seq);
+    
     freeaddrinfo(serv_info);
 
-    close(sock_fd);
+    close(receiver_sock);
 }
+
 
 /*-----------------------------------------------------------------------------
  *
@@ -163,33 +158,30 @@ void handle(int client, char *remote_host, char *remote_port)
 
 int main(int argc, char **argv)
 {
-    int status;
-    int sock_fd;
-    int newsock;
-    struct addrinfo hints;
-    struct addrinfo *local_serv_info;
-    struct addrinfo *cur_info;       /* Used to iterate through the server_info list */
-    struct sockaddr_in6 client_addr; /* Client's address information */
-    int reuse_addr = 1; /* True */
-    socklen_t size; 
-    char client_addr_string[BUF_SIZE];
-    char *local_port;
-    char *remote_host;
-    char *remote_port;
+    int max_window_size;
+    int timeout_sec;
+    char *receiver_ip;
+    char *receiver_port;
+    uint32_t seq_num = 0;  /* Use 32-bit sequence num to ensure max capacity before wrapping (likely unnecesary)*/
+    struct message *msg;
+    char *in_buf = NULL;   /* Buffer to hold the output message sent to the receiver */
+    size_t len = 0;        /* Length of text line read in */
+    char *out_buf = NULL; /* Buffer to hold the output message struct containing text and seq num */
 
-    /* Get the server host and port from the command line */
-    if (argc < 4)
+    /* Get the receiver host and port as well as window size and timeout from the command line */
+    if (argc < 5)
     {
-        fprintf(stderr, "Usage: %s <local_port> <remote_host> <remote_port>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <receiver_ip> <receiver_port> <max_send_window_size> <timeout_sec>\n", argv[0]);
         
         exit(1);
     }
-    local_port = argv[1];
-    remote_host = argv[2];
-    remote_port = argv[3];
+    receiver_ip = argv[1];
+    receiver_port = argv[2];
+    max_window_size = atoi(argv[3]);
+    timeout_sec = atoi(argv[4]);
     
-    if (atoi(local_port) < MIN_PORT_NUM || atoi(local_port) > MAX_PORT_NUM ||
-        atoi(remote_port) < MIN_PORT_NUM || atoi(remote_port) > MAX_PORT_NUM)
+    /* Check to make sure input variables are allowed */
+    if (atoi(receiver_port) < MIN_PORT_NUM || atoi(receiver_port) > MAX_PORT_NUM)
     {
         fprintf(stderr, "Usage: Port numbers must be between %d and %d\n", 
                          MIN_PORT_NUM, MAX_PORT_NUM);
@@ -197,89 +189,49 @@ int main(int argc, char **argv)
         exit(1);
     }
     
-    /* Get the address info */
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET6;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;     /* Let getaddrinfo() chose an address for me */
+    printf("UDP sender started: \n"
+           "\tReceiver IP/Hostname: %s, Receiver Port: %s\n"
+           "\tMax message window size: %i  Timeout (sec): %i\n"
+	   "\tReady for input...\n\n", receiver_ip, receiver_port, max_window_size, timeout_sec);
     
-    if ((status = getaddrinfo(NULL, local_port, &hints, &local_serv_info)) != 0)
-    {
-        fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
-        
-        exit(1);
-    }
+    /* Make space for the output buffer to hold the message */
+    out_buf = calloc(1, sizeof(struct message));
     
-    /* local_serv_info now points to a linked list of 1 or more struct addrinfos
-       Loop through the list and bind to the first one we can */
-    for(cur_info = local_serv_info; cur_info != NULL; cur_info = cur_info->ai_next)
-    {
-        if ((sock_fd = socket(cur_info->ai_family, cur_info->ai_socktype,
-                              cur_info->ai_protocol)) == -1)
-        {
-            perror("server: socket");
-            
-            continue;
-        }
-
-        if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr, sizeof(int)) == -1)
-        {
-            perror("setsockopt");
-            
-            exit(1);
-        }
-
-        if (bind(sock_fd, cur_info->ai_addr, cur_info->ai_addrlen) == -1)
-        {
-            close(sock_fd);
-            perror("server: bind");
-            
-            continue;
-        }
-
-        break;
-    }
-    
-    freeaddrinfo(local_serv_info); /* Free the linked-list */
-    
-    /* Announce that this socket will be used to listen for incoming connections */
-    if (listen(sock_fd, PROXY_BACKLOG) == -1)
-    {
-        perror("listen");
-        
-        exit(1);
-    }
-    
-    printf("UDP proxy: waiting for connections...\n");
-    
-    /* Main proxy accept loop that receives requests and forwards them to the server */
+    /* Main sender loop that receives user input from stdin and forwards the messages to the receiver
+     * via UDP. The user-specified window size and timeout length determine the functional details
+     * of the go-back-n sliding window implementation */
     while (1)
-    {
-        size = sizeof(struct sockaddr_in6);
-        newsock = accept(sock_fd, (struct sockaddr*)&client_addr, &size);
-
-        if (newsock == -1)
-        {
-            perror("accept");
-            
-            continue;
-        }
-        else
-        {
-            /* Convert the IPv6 addr to human readable string */
-            inet_ntop(AF_INET6, &(client_addr.sin6_addr), client_addr_string, BUF_SIZE);
-            printf("\n UDP Proxy: Connection received from (%s , %d)\n",
-                    client_addr_string, ntohs(client_addr.sin6_port));
-            
-            /* Handle the new request */
-            handle(newsock, remote_host, remote_port);
-        }
+    {      
+        in_buf = NULL;
         
-        /* Close the client socket fd now that the request is complete (non-persistent) */
-        close(newsock);
-    }
+        /* Clear out the memory of the out buffer */
+        memset(out_buf, 0, sizeof(struct message));
+        
+        /* Allocate message space */ 
+        msg = calloc(1, sizeof(struct message));
+        
+        /* Give the message the next sequence number and increment */
+        msg->seq = seq_num;
+        seq_num++;
+        
+        /* Read the command line text into the input buffer  */
+        getline(&in_buf, &len, stdin);
+        
+        /* Copy as many characters from the read input buffer into the message struct that will fit */
+        memcpy(msg->text, in_buf, MAX_TEXT_LENGTH);
+        
+        /* Put the message into the output buffer */
+        memcpy(out_buf, msg, sizeof(struct message));
+        
+        /* Handle the message (send it and get a response) */
+        handle(out_buf, receiver_ip, receiver_port);
 
-    close(sock_fd);
+        /* Free the message space */
+        free(msg);
+        
+        /* Free the space allocated for the in buffer in getline() */
+        free(in_buf);
+    }
     
     return 0;
 }
