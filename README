@@ -6,6 +6,8 @@ scr108
 
 *NOTE* I separated questions 1 and 2 into their own files and executables. I'm not sure if this was the intention, since the assignment spec says to "modify your receiver and sender from question 1", but I figured it would be easier to mark each question separately this way.
 
+All necessary executables are built by running 'make' or 'make all'
+
 ///////////////////////////////////////////////////////////////////////////
 // Q1
 //////////////////////////////////////////////////////////////////////////

@@ -374,6 +374,34 @@ int main(int argc, char *argv[])
                     /* Should never happen if size is chosen wisely */
                     printf("\tNo space left in buffer. Message discarded\n");
                 }
+                
+                /* If  we have received at least one successful message send an ack
+                 * of he most recently successfuly sequence number to prevent an
+                 * endless loop on the client end */
+                if (last_succ_seq != UINT32_MAX)
+                {
+                    /* If the ack shouldn't be considered lost/corrupt, send a reply */
+                    if(!ackLost(ack_loss_prob))
+                    {
+                        reply_seq = last_succ_seq;
+                        
+                        /* Send the sequence number last successfully received as a 
+                         * reply back to the sender */
+                        num_bytes = sendto(sock_fd, (char *)&reply_seq, sizeof(reply_seq), 0,
+                                        (struct sockaddr *) &their_addr, addr_len);
+                        if (num_bytes < 0) 
+                        {
+                            perror("sendto");
+
+                        }
+                        
+                        printf("\tAck sent\n");
+                    }
+                    else
+                    {
+                        printf("\tAck not sent (either corrupt\n");
+                    }
+                }
             }
         }
     }

@@ -5,6 +5,16 @@ scr108
 11115094
 
 ///////////////////////////////////////////////////////////////////////////
+// Global implementation details
+//////////////////////////////////////////////////////////////////////////
+
+- I chose not to use threads, so the user's input is not read in while the client is attempting to get a reply from the server. However, once the client gets a reply that it is happy with, any input entered in the meantime will now be processed in the order that it was entered (or at least this was the intention and expected behaviour).
+
+- The timeout is implemented as a part of the select call in my client's get_reply_from_receiver() function. The select call watches the server's file descriptor to see if it is ready for reading (to get the reply). If it does not become ready in the duration specified by the command line argument, the action times out. Any input entered by the user during this time is handled as mentioned above.
+
+- Ack corruption probabilities are expected to be provided as a float from 0 - 1.0, with 0 meaning that all acks will be sent and 1.0 meaning that no acks will be sent.
+
+///////////////////////////////////////////////////////////////////////////
 // Q1
 //////////////////////////////////////////////////////////////////////////
 
@@ -25,8 +35,15 @@ At any point when an ack containing a sequence number is received from the serve
 
 UDP receiver (server)
 -----------------------------
-I used my UDP server from assignment 1 as a starting point. Very few things had to be removed and mostly all cahnges made were additions to support the extra functionality needed.
+I used my UDP server from assignment 1 as a starting point. Very few things had to be removed and mostly all changes made were additions to support the extra functionality needed.
 
+My server handles a message received from the client in one of three ways:
+
+(1) If the message is the next in-order message, a reply is sent with the sequence number received and the a varible holding the last successful in-order sequence number is updated.
+(2) If the message has the same sequence number as the current most recent in-order sequence number successfully received, that same sequence number is sent back as a reply because the client obviously does not know that the message was already received.
+(3) If the message is out of order, do nothing. Just loop back to receive another message.
+
+Whenever an ack is to be sent, the probablility entered as a command line argument (from 0 to 1.0) determines if it should be successful. The helper function ackLost() returns a boolean determining if the ack should be sent or not.
 
 
 ///////////////////////////////////////////////////////////////////////////
@@ -35,8 +52,17 @@ I used my UDP server from assignment 1 as a starting point. Very few things had 
 
 UDP sender (client)
 -----------------------------
-The sender/client for this question did not have to change at all for thsi question. All of the changes necessary to implement the selective repeat sliding window are in the receiver code. 
+The sender/client for this question did not have to change at all. All of the changes necessary to implement the selective repeat sliding window are in the receiver code. 
 
 
 UDP receiver (server)
 -----------------------------
+Again, like Q1, the server handles three messages in three different ways:
+(1) If the message is the next in-order message, a reply is sent with the current most recent in-order sequence number received. However, since we can now have buffered messages that were received out of order, we need to see if any items can now be cleared from the buffer. For example, if items 3, 4, 5, and 7 are in the buffer and we receive the next in-order sequence number of 2, we can clear 3, 4, and 5 from the buffer since they are the next in-order messages that we have already received. Now instead of just returning the sequence number of the in-order message received, we reply with an ack containing the sequence number of the largest message cleared from the buffer (in this case, 5).
+(2) If the message has the same sequence number as the current most recent in-order sequence number successfully received, that same sequence number is sent back as a reply because the client obviously does not know that the message was already received.
+(3) If the message is out of order, first attempt to add it to the buffer as long as there is space left. If we have already received that message sequence number, it is ignored and not added to the buffer. After the item is buffered, if no message has been successfully received yet, no ack is sent, otherwise an ack is sent containing the most recent successfully received in-order sequence number.
+
+Again, the acks will fail at a probability equal to the value passed in as a command line argument.
+
+The buffer is implemented as an array of struct message that is dynamically allocated to hold n messages, where n is the buffer size as indicated by the command line parameter.
+
