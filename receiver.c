@@ -143,6 +143,7 @@ int main(int argc, char *argv[])
     {
         /* Clear out the message space */
         memset(msg, 0, sizeof(struct message));
+        memset(msgRecvd, 0, len);
         
         /* Receive the message */
         if ((num_bytes = recvfrom(sock_fd, msg, sizeof(struct message) , 0,
@@ -153,23 +154,22 @@ int main(int argc, char *argv[])
             exit(1);
         }
         
-        printf("UDP Server: got packet from %s\n", inet_ntop(their_addr.ss_family,
+        printf("UDP Server: got packet from %s", inet_ntop(their_addr.ss_family,
                                                 get_in_addr((struct sockaddr *)&their_addr),
                                                 s, sizeof s));
         
         /* Print the message info that was received */
-        printf("\nMsg recvd:\n"
-               "\tSeq #: %i   Text: %s", msg->seq, msg->text);
+        printf("\nMsg recvd:  Seq #: %i   Text: %s", msg->seq, msg->text);
         
         reply_seq = msg->seq;
         
-        printf("Should the message be correctly received? (y/n) \n");
+        printf("\tShould the message be correctly received? (y/n) \n\t");
         /* Get user inpt to decide whether the data received was "corrupt" (i.e., no ack) */
         getline(&msgRecvd, &len, stdin);
         
         /* If the first letter Y or y (yes), send a reply, otherwise do nothing (corrupt msg) */
-        if (msgRecvd[0] == 'y' && msgRecvd[0] != 'Y')
-        {
+        if (msgRecvd[0] == 'y' || msgRecvd[0] == 'Y')
+        {   
             /* Update the mst request successful sequence number */
             last_succ_seq = reply_seq;
             

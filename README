@@ -8,4 +8,4 @@ scr108
 Known Issues
 -------------
 - The max message/input text length is set to 256 characters. Entering a message beyond that will cause it to be cut off at character 256.
-
+- My sequence numbers do not wrap. I chose my sequence numbers to go from 0 - UINT32_MAX, so it works for all test cases I can come up with, but it would not work in a practical use case scenario
