@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
@@ -52,6 +53,20 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+/**
+ * Gets a bool determining if an ack should be viewed as corrupt or lost (ie. don't
+ * send the ack)
+ * 
+ * Returns true or false based on a given probability
+ */
+bool ackLost(float prob)
+{
+    /* Generate s random float between 0 and 1 */
+    float rand_num = (float)rand() / (float)RAND_MAX; 
+    
+    return rand_num < prob;
+}
+
 /*-----------------------------------------------------------------------------
  *
  * --------------------------------------------------------------------------*/
@@ -72,13 +87,17 @@ int main(int argc, char *argv[])
     struct message *msg;
     char *msgRecvd = NULL;  /* Buffer to read in the yes/no message corrupt input */
     size_t len = 0;         /* Length of text line read in */
+    float ack_loss_prob;
     
-    if (argc < 2)
+    if (argc < 3)
     {
-        fprintf(stderr, "Usage: %s <port_number>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <port_number> <ack_loss_prob>\n", argv[0]);
         
         exit(1);
     }
+    
+    /* Grab the ack loss probability from the command line */
+    ack_loss_prob = atof(argv[2]);
     
     /* Grab the port number */
     port_num = atoi(argv[1]);
@@ -154,33 +173,81 @@ int main(int argc, char *argv[])
             exit(1);
         }
         
-        printf("UDP Server: got packet from %s", inet_ntop(their_addr.ss_family,
+        printf("\nUDP Server: got packet from %s", inet_ntop(their_addr.ss_family,
                                                 get_in_addr((struct sockaddr *)&their_addr),
                                                 s, sizeof s));
         
         /* Print the message info that was received */
         printf("\nMsg recvd:  Seq #: %i   Text: %s", msg->seq, msg->text);
         
-        reply_seq = msg->seq;
-        
-        printf("\tShould the message be correctly received? (y/n) \n\t");
-        /* Get user inpt to decide whether the data received was "corrupt" (i.e., no ack) */
-        getline(&msgRecvd, &len, stdin);
-        
-        /* If the first letter Y or y (yes), send a reply, otherwise do nothing (corrupt msg) */
-        if (msgRecvd[0] == 'y' || msgRecvd[0] == 'Y')
-        {   
-            /* Update the mst request successful sequence number */
-            last_succ_seq = reply_seq;
+        /* If the message is the next in-order message, reply with the sequence number received */
+        if (last_succ_seq == (msg->seq - 1))
+        {
+            reply_seq = msg->seq;
             
-            /* Send the sequence number successfully received as a reply back to the sender */
-            num_bytes = sendto(sock_fd, (char *)&reply_seq, sizeof(reply_seq), 0,
-                               (struct sockaddr *) &their_addr, addr_len);
-            if (num_bytes < 0) 
-            {
-                perror("sendto");
+            /* Get user inpt to decide whether the data received was "corrupt" (i.e., no ack) */
+            printf("\tThis is the next in-order message\n"
+                   "\tShould the message be correctly received? (y/n) \n\t");
+            getline(&msgRecvd, &len, stdin);
+            
+            /* If the first letter Y or y (yes), send a reply */
+            if (msgRecvd[0] == 'y' || msgRecvd[0] == 'Y')
+            {   
+                /* If the ack shouldn't be considered lost/corrupt, send a reply */
+                if(!ackLost(ack_loss_prob))
+                {
+                    /* Send the sequence number successfully received as a reply back to the sender */
+                    num_bytes = sendto(sock_fd, (char *)&reply_seq, sizeof(reply_seq), 0,
+                                    (struct sockaddr *) &their_addr, addr_len);
+                    if (num_bytes < 0) 
+                    {
+                        perror("sendto");
 
+                    }
+                    
+                    printf("\tAck sent\n");
+                }
+                else
+                {
+                    printf("\tAck was corrupted\n");
+                }
+                
+                /* Update the last successful sequence number received */
+                last_succ_seq = reply_seq;
             }
+        }
+        /* Else if the message received has the same sequence number as the most recently successful one,
+         * send the acknowledgement again */
+        else if (last_succ_seq == msg->seq)
+        {
+            reply_seq = msg->seq;
+            
+            printf("\tThis is a retransmission of the last correctly received in-order message\n");
+            
+            /* If the ack shouldn't be considered lost/corrupt, send a reply */
+            if(!ackLost(ack_loss_prob))
+            {
+                /* Send the sequence number successfully received as a reply back to the sender */
+                num_bytes = sendto(sock_fd, (char *)&reply_seq, sizeof(reply_seq), 0,
+                                (struct sockaddr *) &their_addr, addr_len);
+                if (num_bytes < 0) 
+                {
+                    perror("sendto");
+
+                }
+                
+                printf("\tAck sent\n");
+            }
+            else
+            {
+                printf("\tAck was corrupted\n");
+            }
+        }
+        /* Else the received message is neither the next in-order message nor a retransmission of the most
+         * recent in-order message, just print it and loop back to receive again */
+        else
+        {
+            printf("\tThis is an out of order message. Nothing is to be done\n");
         }
     }
     

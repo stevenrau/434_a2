@@ -4,8 +4,50 @@ Steven Rau
 scr108
 11115094
 
+*NOTE* I separated questions 1 and 2 into their own files and executables. I'm not sure if this was the intention, since the assignment spec says to "modify your receiver and sender from question 1", but I figured it would be easier to mark each question separately this way.
+
+///////////////////////////////////////////////////////////////////////////
+/ Q1
+//////////////////////////////////////////////////////////////////////////
+
 -------------
 Known Issues
 -------------
 - The max message/input text length is set to 256 characters. Entering a message beyond that will cause it to be cut off at character 256.
 - My sequence numbers do not wrap. I chose my sequence numbers to go from 0 - UINT32_MAX, so it works for all test cases I can come up with, but it would not work in a practical use case scenario
+- Once the siding window reaches it's max size, it will continually try to re-send the next in-order message and timeout until the receiver replies. This may cause the receiver to become swamped with messages if the timeout is too quick and the receiver is very slow to handle requests.
+
+-----------
+How to run
+-----------
+
+First, run the receiver application with ./q1receiver <port_number> <ack_loss_prob>
+
+Then, the sender can be run with ./q1sender <receiver_ip> <receiver_port> <max_window_size> <timeout_sec>
+
+The receiver will wait until it receives a message from the sender. Once it receives a message, the contents (sequence number and message text) and type (next in-order, retransmission of last in-order, or out of order) are printed to stdout. The type of message provides three potential reciever use cases:
+
+(1) The message is the next in order sequence number:
+    The receiver waits for input from stdin whether or not this message whould be seen as "corrupt" or not. If not, then a reply containing the successfully recieved message sequence number is returned, as long as it passes the ack corruption probability test (based on the probablilty passed in as the command line argument)
+(2) The message is a retransmission of the last in-order sequence number:
+    The receiver replies with an ack, as long as it passes the ack corruption probability test.
+(3) The message is out of order:
+    Nothing is done.
+    
+On the sender's side, the user is prompted for an input message. Once a message is input, either an indication of successful ack (not necessarily for the current message sequence number) or timeout message is displayed. Based on the sequence number returned, the message may be put into the sending window queue. If no message is received (timeout or error), the message is put into the window queue and the next user input message is gathered and attempted to send.
+
+Once the window queue gets full, the program ignores user input for the time being and tries to re-transmit the next in-order message based on the last successful ack received. The window cannot move forward (gain more space for user input) until this next in-order message is ackknowledged.
+
+
+///////////////////////////////////////////////////////////////////////////
+/ Q2
+//////////////////////////////////////////////////////////////////////////
+
+-------------
+Known Issues
+-------------
+* Same as above
+
+-----------
+How to run
+-----------
