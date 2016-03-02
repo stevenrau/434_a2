@@ -4,15 +4,39 @@ Steven Rau
 scr108
 11115094
 
----------
-| Q1 
----------
+///////////////////////////////////////////////////////////////////////////
+// Q1
+//////////////////////////////////////////////////////////////////////////
 
 UDP sender (client)
 -----------------------------
-I began with my UDP proxy since it alread contained the UDP client side that I need for this assignment. Quite a bit of unneeded code was removed (code that interacted with the client), so I think this UDP sender/client is much simpler than my UDP proxy from assignment 1.
+I began with my UDP proxy since it alread contained the UDP client side that I need for this assignment. Quite a bit of unneeded code was removed (code that interacted with the client), before starting this question.
+
+My messages are wrapped in a struct called message (in shared.h) that has a field for a sequence number header. The field for the user input text was set to be 256 characters, so any message longer than that will be cut off.
+
+The sliding window is implemented as a buffer to hold n messages, where n is the window size specified by the user as a command line argument. New messages are added onto the end of the buffer as the window "slides forward".
+
+The UDP client code behaves quite similarily to assignment 1 as long as the sliding window buffer isn't full. The messages are sent to a handler that forwards them to the receiver and then listens for a reply. If no reply is heard or the select() call times out before an ack is received from the receiver/server, the message is added to the window buffer.
+
+Once the window buffer reaches its max size, the client ignores user text input from stdin (for the time being) and instead attempts to send the message from the window that is the next in-order message based on the most recent sequence number ack that was received from the server.
+
+At any point when an ack containing a sequence number is received from the server, the sliding window is checked to see if it can be moved forward (any message with a sequence number lower than the one received in the ack can be removed since it must have been correctly received by the server)
 
 
 UDP receiver (server)
 -----------------------------
 I used my UDP server from assignment 1 as a starting point. Very few things had to be removed and mostly all cahnges made were additions to support the extra functionality needed.
+
+
+
+///////////////////////////////////////////////////////////////////////////
+// Q2
+//////////////////////////////////////////////////////////////////////////
+
+UDP sender (client)
+-----------------------------
+The sender/client for this question did not have to change at all for thsi question. All of the changes necessary to implement the selective repeat sliding window are in the receiver code. 
+
+
+UDP receiver (server)
+-----------------------------
