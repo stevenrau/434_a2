@@ -149,6 +149,8 @@ int main(int argc, char *argv[])
         
         return 2;
     }
+    
+    addr_len = sizeof their_addr;
 
     freeaddrinfo(serv_info);
     
@@ -157,7 +159,8 @@ int main(int argc, char *argv[])
 
     printf("UDP Server: waiting to recvfrom...\n");
     
-    addr_len = sizeof their_addr;
+    /* Main receiver loop that takes in messages from the sender and handles them according to
+     * their sequence number. */
     while (1)
     {
         /* Clear out the message space */

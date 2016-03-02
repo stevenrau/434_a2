@@ -7,7 +7,7 @@ scr108
 *NOTE* I separated questions 1 and 2 into their own files and executables. I'm not sure if this was the intention, since the assignment spec says to "modify your receiver and sender from question 1", but I figured it would be easier to mark each question separately this way.
 
 ///////////////////////////////////////////////////////////////////////////
-/ Q1
+// Q1
 //////////////////////////////////////////////////////////////////////////
 
 -------------
@@ -40,7 +40,7 @@ Once the window queue gets full, the program ignores user input for the time bei
 
 
 ///////////////////////////////////////////////////////////////////////////
-/ Q2
+// Q2
 //////////////////////////////////////////////////////////////////////////
 
 -------------
@@ -51,3 +51,11 @@ Known Issues
 -----------
 How to run
 -----------
+
+The sender and receiver programs are run in the same way as Q1, except that the executable names are different, and the receiver takes in one extra parameter, buffer size:
+
+The receiver is run with ./q2receiver <port_number> <ack_loss_prob> <buffer_size>
+
+The sender is run with ./q2sender <receiver_ip> <receiver_port> <max_window_size> <timeout_sec>
+
+The reciever will now buffer out of order messages so when an out of order message is received, user input is required to decide if it was "corrupt" or not. If not corrupt, the message is buffered (assuming it needs to be buffered). Also, now if an in-order message is received, the buffer is checked to see if any messages stored can be cleared. If so, the most recent sequence number is updated to be the largest sequence number of a message cleared from the buffer since that is now the most recent successful in-order message receieved.
